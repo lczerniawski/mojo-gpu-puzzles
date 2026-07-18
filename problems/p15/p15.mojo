@@ -32,7 +32,30 @@ def axis_sum(
     var global_i = block_dim.x * block_idx.x + thread_idx.x
     var local_i = thread_idx.x
     var batch = block_idx.y
-    # FILL ME IN (roughly 15 lines)
+
+    cache = stack_allocation[dtype=dtype, address_space=AddressSpace.SHARED](row_major[SIZE]())
+    
+    if local_i < size:
+        cache[local_i] = a[batch, local_i]
+    else:
+        cache[local_i] = 0
+
+    var stride = TPB // 2
+    while stride > 0:
+        var temp_val: output.ElementType = 0
+        if local_i < stride:
+            temp_val = cache[local_i + stride]
+
+        barrier()
+
+        if local_i < stride:
+            cache[local_i] += temp_val
+
+        barrier()
+        stride //= 2
+
+    if local_i == 0:
+        output[batch, 0] = cache[0]
 
 
 # ANCHOR_END: axis_sum
