@@ -42,7 +42,8 @@ def add_10_shared_tile_tensor(
     # shared memory synchronization patterns for more complex scenarios where
     # threads need to coordinate access to shared data.
     barrier()
-
+    if global_i < size:
+        output[global_i] = shared[local_i] + 10
     # FILL ME IN (roughly 2 lines)
 
 
