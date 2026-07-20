@@ -35,8 +35,9 @@ def butterfly_pair_swap[
     """
     var global_i = block_dim.x * block_idx.x + thread_idx.x
 
-    # FILL ME IN (4 lines)
-
+    current_val = input[global_i]
+    swapped_val = shuffle_xor(current_val, 1)
+    output[global_i] = swapped_val
 
 # ANCHOR_END: butterfly_pair_swap_solution
 
@@ -56,7 +57,16 @@ def butterfly_parallel_max[
     """
     var global_i = block_dim.x * block_idx.x + thread_idx.x
 
-    # FILL ME IN (roughly 7 lines)
+    if global_i < size:
+        var max_val = input[global_i]
+
+        var offset = WARP_SIZE // 2
+        while offset > 0:
+            max_val = max(max_val, shuffle_xor(max_val, UInt32(offset)))
+            offset //= 2
+        
+        output[global_i] = max_val
+        
 
 
 # ANCHOR_END: butterfly_parallel_max
@@ -87,8 +97,19 @@ def butterfly_conditional_max[
     if global_i < size:
         var current_val = input[global_i]
         var min_val = current_val
+        var max_val = current_val
 
-        # FILL ME IN (roughly 11 lines)
+        var offset = WARP_SIZE // 2
+        while offset > 0:
+                max_val = max(max_val, shuffle_xor(max_val, UInt32(offset)))
+                min_val = min(min_val, shuffle_xor(min_val, UInt32(offset)))
+                offset //= 2
+            
+        if lane % 2 == 0:
+            output[global_i] = max_val
+        else:
+            output[global_i] = min_val
+
 
 
 # ANCHOR_END: butterfly_conditional_max
@@ -122,7 +143,11 @@ def warp_inclusive_prefix_sum[
     """
     var global_i = block_dim.x * block_idx.x + thread_idx.x
 
-    # FILL ME IN (roughly 4 lines)
+
+    if global_i < size:
+        current_val = input[global_i]
+        scan_result = prefix_sum[exclusive=False](current_val)
+        output[global_i] = scan_result
 
 
 # ANCHOR_END: warp_inclusive_prefix_sum
@@ -156,8 +181,24 @@ def warp_partition[
 
     if global_i < size:
         var current_val = input[global_i]
+        
+        var predicate_left = Scalar[dtype](1.0) if current_val < pivot else Scalar[dtype](0.0)
+        var predicate_right = Scalar[dtype](1.0) if current_val >= pivot else Scalar[dtype](0.0)
 
-        # FILL ME IN (roughly 13 lines)
+        var warp_left_pos = prefix_sum[exclusive=True](predicate_left)
+        var warp_right_pos = prefix_sum[exclusive=True](predicate_right)
+        var warp_left_total = predicate_left
+
+        var offset = WARP_SIZE // 2
+        while offset > 0 :
+            warp_left_total = shuffle_xor(warp_left_total, UInt32(offset))
+            offset //= 2
+        
+        if current_val < pivot:
+            output[Int(warp_left_pos)] = current_val
+        else:
+            output[Int(warp_left_pos + warp_right_pos)] = current_val
+
 
 
 # ANCHOR_END: warp_partition

@@ -35,7 +35,14 @@ def neighbor_difference[
     var global_i = block_dim.x * block_idx.x + thread_idx.x
     var lane = Int(lane_id())
 
-    # FILL IN (roughly 7 lines)
+    current_val = input[global_i]
+    next_val = shuffle_down(current_val, 1)
+    if lane < WARP_SIZE - 1:
+        result = next_val- current_val
+        output[global_i] = result
+    else:
+        output[global_i] = 0
+
 
 
 # ANCHOR_END: neighbor_difference
@@ -63,7 +70,20 @@ def moving_average_3[
     var global_i = block_dim.x * block_idx.x + thread_idx.x
     var lane = Int(lane_id())
 
-    # FILL IN (roughly 10 lines)
+    if global_i < size:
+        current_val = input[global_i]
+        next_val = shuffle_down(current_val, 1)
+        next_val_2 = shuffle_down(current_val, 2)
+        if lane < WARP_SIZE - 2 and global_i - size < 2:
+            result = (current_val + next_val + next_val_2) / 3.0
+            output[global_i] = result
+        elif lane < WARP_SIZE - 1 and global_i - size < 1:
+            result = (current_val + next_val) / 2.0
+            output[global_i] = result
+        else:
+            result = current_val
+            output[global_i] = result
+
 
 
 # ANCHOR_END: moving_average_3
@@ -86,8 +106,20 @@ def broadcast_shuffle_coordination[
 
     if global_i < size:
         var scale_factor: output.ElementType = 0.0
+        if lane == 0:
+            var block_start = block_idx.x * block_dim.x
+            for i in range(4):
+                scale_factor += input[block_start + i]
+            scale_factor /= 4
+        
+        scale_factor = broadcast(scale_factor)
+        current_val = input[global_i]
+        next_val = shuffle_down(current_val, 1)
 
-        # FILL IN (roughly 14 lines)
+        if lane == WARP_SIZE - 1:
+            output[global_i] = current_val * scale_factor
+        else:
+            output[global_i] = (current_val + next_val) * scale_factor
 
 
 # ANCHOR_END: broadcast_shuffle_coordination
@@ -108,9 +140,12 @@ def basic_broadcast[
     var lane = Int(lane_id())
 
     if global_i < size:
-        var broadcast_value: output.ElementType = 0.0
-
-        # FILL IN (roughly 10 lines)
+        var scale_factor: output.ElementType = 0.0
+        if lane == 0:
+            scale_factor = input[0] + input[1] + input[2] + input[3]
+        scale_factor = broadcast(scale_factor)
+        
+        output[global_i] = input[global_i] + scale_factor
 
 
 # ANCHOR_END: basic_broadcast
@@ -132,8 +167,13 @@ def conditional_broadcast[
 
     if global_i < size:
         var decision_value: output.ElementType = 0.0
-
-        # FILL IN (roughly 10 lines)
+        if lane == 0:
+            var block_start = block_idx.x * block_dim.x
+            for i in range(8):
+                if block_start + i < size and input[block_start + i] > decision_value:
+                    decision_value = input[block_start + i]
+        
+        decision_value = broadcast(decision_value)
 
         var current_input = input[global_i]
         var threshold = decision_value / 2.0

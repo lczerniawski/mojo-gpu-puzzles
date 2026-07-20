@@ -40,7 +40,15 @@ def elementwise_add[
         simd_width: Int, alignment: Int = align_of[dtype]()
     ](indices: Coord) capturing -> None:
         var idx = Int(indices[0].value())
-        # FILL IN (2 to 4 lines)
+        var a_lt = a.to_layout_tensor()
+        var b_lt = b.to_layout_tensor()
+        var out_lt = output.to_layout_tensor()
+
+        var a_simd = a_lt.aligned_load[width=simd_width](Index(idx))
+        var b_simd = b_lt.aligned_load[width=simd_width](Index(idx))
+        result = a_simd + b_simd
+
+        out_lt.store[simd_width](Index(idx), result)
 
     elementwise[add, SIMD_WIDTH, target="gpu"](size, ctx)
 
@@ -76,7 +84,11 @@ def tiled_elementwise_add[
         var a_tile = a.tile[tile_size](tile_id).to_layout_tensor()
         var b_tile = b.tile[tile_size](tile_id).to_layout_tensor()
 
-        # FILL IN (6 lines at most)
+        comptime for i in range(tile_size):
+            a_vec = a_tile.load[simd_width](Index(i))
+            b_vec = b_tile.load[simd_width](Index(i))
+            result = a_vec + b_vec
+            output_tile.store[simd_width](Index(i), result)
 
     var num_tiles = (size + tile_size - 1) // tile_size
     elementwise[process_tiles, 1, target="gpu"](num_tiles, ctx)
@@ -114,7 +126,13 @@ def manual_vectorized_tiled_elementwise_add[
         var b_lt = b.to_layout_tensor()
         var out_lt = output.to_layout_tensor()
 
-        # FILL IN (7 lines at most)
+        comptime for i in range(tile_size):
+            var global_start = tile_id * chunk_size + i * simd_width
+            a_vec = a_lt.aligned_load[simd_width](Index(global_start))
+            b_vec = b_lt.aligned_load[simd_width](Index(global_start))
+            result = a_vec + b_vec
+            out_lt.store[simd_width](Index(global_start), result)
+
 
     # Number of tiles needed: each tile processes chunk_size elements
     var num_tiles = (size + chunk_size - 1) // chunk_size
@@ -156,7 +174,17 @@ def vectorize_within_tiles_elementwise_add[
         var b_lt = b.to_layout_tensor()
         var out_lt = output.to_layout_tensor()
 
-        # FILL IN (9 lines at most)
+        def vectorized_add[
+            width: Int
+        ](i: Int) {read tile_start, read a_lt, read b_lt, mut out_lt}:
+            var global_idx = tile_start + i
+            if global_idx + width <= size:
+                var a_vec = a_lt.aligned_load[width](Index(global_idx))
+                var b_vec = a_lt.aligned_load[width](Index(global_idx))
+                var result = a_vec + b_vec
+                out_lt.store[width](Index(global_idx), result)
+        
+        vectorize[simd_width](actual_tile_size, vectorized_add)
 
     var num_tiles = (size + tile_size - 1) // tile_size
     elementwise[
